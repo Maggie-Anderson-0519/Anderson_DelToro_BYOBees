@@ -1,0 +1,386 @@
+---
+title: "Supplemental Materials for Del Toro et al 2019"
+author: "Del Toro et al."
+date: "1/29/2019"
+output: html_document
+editor_options: 
+chunk_output_type: console
+---
+Load datasets and libaries before starting 
+```{r, prep work}
+#set wd 
+setwd("~/Lawrence/2018-19/Spring_2019/DelToro-research/BEEZ/data-code")
+
+#site environmental attributes
+env<- read.csv ("site_env_vars.csv")
+#site by species matrix 
+df<- read.csv("2017_2018_BeeDataset_03_22_19.csv"); df[is.na(df)] <- 0 #replace NAs with 0  
+
+#libraries 
+library (tidyverse)
+library (iNEXT)
+library (vegan)
+library (betapart)
+library (ggmap)
+#library (ggord) #Warning in install.packages :package 'ggord' is not available (for R version 3.5.1)
+library (gridExtra)
+```
+
+##Consider the spatial distribution of the study locations and their environmetnal attributes: 
+```{r Map, fig.height=4, fig.width=6, message=FALSE, warning=FALSE, dpi=400, echo=FALSE}
+#API 
+key<-"AIzaSyD1GNE6zywhNA9Cmnj2O3X-DhVfMOz2YNw"
+register_google(key = key)
+atw<- get_map(location=c(-88.375,44.27), zoom=12, scale=3, maptype = "toner", source = "stamen", crop=FALSE)
+atw.map<-ggmap(atw, color="bw") + coord_fixed(xlim = c(-88.50, -88.25), ratio = 1/.75) + ylim(c(44.19, 44.35)) 
+
+atw.map2<- atw.map + 
+  geom_point (aes(x=Lon, y=Lat, size=sqrt(green.space.m.), alpha=0.75, color=Treatment), data=env) +
+  theme (legend.position = "none") + ylab("Latitude") + xlab("Longitude") + 
+  geom_segment(arrow=arrow(length=unit(3,"mm")), 
+               aes(x=-88.30 ,xend=-88.3, y=44.2,yend=44.22),colour="darkgreen") + 
+  annotate(x=-88.30, y=44.21, label="N", colour="black", geom="text", size=10)  + 
+  annotate(x=-88.42, y=44.215, label="HKRDT", colour="black", geom="text", size=3) + 
+  annotate(x=-88.44, y=44.25, label="PRCPK", colour="black", geom="text", size=3) + 
+  annotate(x=-88.42, y=44.2425, label="RVWH", colour="black", geom="text", size=3) + 
+  annotate(x=-88.40, y=44.2475, label="RVWC", colour="black", geom="text", size=3) + 
+  annotate(x=-88.39, y=44.255, label="SLUG", colour="black", geom="text", size=3) + 
+	annotate(x=-88.41, y=44.26, label="MAIN", colour="black", geom="text", size=3)	+ 
+  annotate(x=-88.40, y=44.2685, label="CITY", colour="black", geom="text", size=3) + 
+  annotate(x=-88.375, y=44.2685, label="PBDY", colour="black", geom="text", size=3) + 
+  annotate(x=-88.375, y=44.2592, label="TLHPK", colour="black", geom="text", size=3) + 
+  annotate(x=-88.26, y=44.2685, label="TISL", colour="black", geom="text", size=3) + 
+  annotate(x=-88.385, y=44.295, label="MEMPK", colour="black", geom="text", size=3) + 
+  annotate(x=-88.475, y=44.32, label="BUBC", colour="black", geom="text", size=3) + 
+  annotate(x=-88.44, y=44.31, label="BUBH", colour="black", geom="text", size=3) + 
+  annotate(x=-88.42, y=44.32, label="LCKR", colour="black", geom="text", size=3) + 
+  annotate(x=-88.37, y=44.346, label="PRDYC", colour="black", geom="text", size=3) + 
+  annotate(x=-88.36, y=44.33, label="PRDYH", colour="black", geom="text", size=3)
+atw.map2
+
+```
+
+##The relationship between observed richness, predicted richness and sampling coverage for each sites
+
+### Rarefaction using iNext package. 
+```{r, iNext functions, eval=FALSE, fig.height=4, fig.width=8}
+#to change the output for each site simply replace the site name in the line below: 
+site.df<- df %>% filter (Site=="LCKR") %>%
+  group_by(Site, Trap, Date) %>%
+  select(6:86)  %>%  summarize_all (funs(sum)) %>% unite ("ID", c("Site","Trap", "Date")) %>% column_to_rownames( "ID") %>% t()
+
+#convert to an iNext input object
+lapply(site.df, as.abucount)
+site.abund<- as.abucount (site.df)
+  
+out<-iNEXT(site.abund, q=0, datatype="abundance"); out
+  ggiNEXT(out, type=1)
+
+ggiNEXT(out, type=2, color.var="site") +
+  ylim(c(0.75,1)) +
+  theme_bw(base_size = 18) + 
+  theme(legend.position="none")
+
+ggiNEXT(out, type=3, color.var ="site") + 
+  xlim(c(0.75,1)) +
+  theme_bw(base_size = 18) +
+  theme(legend.position="bottom",
+        legend.title=element_blank())
+
+out.raw <- iNEXT(site.abund, datatype="abundance", endpoint=500); out.raw
+ggiNEXT(out.raw)
+```
+## Abundance Summary by site 
+```{r}
+df.totals<- df %>% dplyr::select(Site, 6:91) %>% 
+    transmute(Site, Sum = reduce(.[2:ncol(.)], `+`)) %>% 
+    group_by(Site) %>% 
+    summarise(Sum = sum(Sum))
+df.totals
+
+#sort
+df.totals$Site<- factor (df.totals$Site, levels= df.totals$Site [order (df.totals$Sum)])
+
+ggplot (df.totals, aes (x=Site, y=Sum)) + geom_bar(stat="identity") + ylab("Total Abundance") + theme(axis.text.x=element_text(angle = -45, hjust = 0))
+```
+
+## The relationships between species richness and multiple environmental predictors 
+```{r, glm, fig.height=11, fig.width=8.5, res=300}
+require (MASS)
+global.mod<- glm (Bee_richness_obs ~ NDVI + Treatment + tree.sp.rich.Shannon.s + dist.water.m. +  
+                    green.space.m. + NLDC_PCo2 + Florwe.sp.rich.Shannon.s, 
+                      family = "poisson", data=env) # MIA: added Treatment
+summary (global.mod)
+
+stepAIC (global.mod)
+
+best.mod <- glm(formula = Bee_richness_obs ~ tree.sp.rich.Shannon.s + tree.sp.evenness + 
+    dist.water.m. + Florwe.sp.rich.Shannon.s, family = "poisson", 
+    data = env); summary (best.mod)
+
+summary (best.mod)
+
+#NDVI
+# AA<-ggplot (env, aes(x=NDVI, y=Bee_richness_obs)) + geom_point() + 
+#   stat_smooth(method="lm", aes ()) + theme_bw()
+# lm1<-lm (Bee_richness_obs~NDVI, data=env); summary (lm1)
+# 
+# BB<-ggplot (env, aes(x=NDVI, y=Bee_richness_obs, color=Treatment)) + geom_point() + 
+#   stat_smooth(method="lm", aes ()) + theme_bw()
+# lm2<-lm (Bee_richness_obs~NDVI + Treatment, data=env); summary (lm2)
+# grid.arrange(AA,BB,ncol=2)
+
+# Flower sp. diversity (H) relationship with richness
+#all data combined 
+A<-ggplot (env, aes(x=Florwe.sp.rich.Shannon.s, y=Bee_richness_obs)) + geom_point() + 
+  stat_smooth(method="lm") + theme_bw() + annotate ("text", x=.5, y=35, label="Adj R2=0.43, p=0.003") + xlab("Floral Diversity (H`)") + ylab("Bee Species Richness")
+lm1<-lm (Bee_richness_obs~Florwe.sp.rich.Shannon.s, data=env); summary (lm1)
+
+#data partitioned by Treatment 
+B<-ggplot (env, aes(x=Florwe.sp.rich.Shannon.s, y=Bee_richness_obs, color=Treatment)) + geom_point() + stat_smooth(method="lm") + theme_bw() + xlab("Floral Diversity (H`)") + ylab("Bee Species Richness") + annotate ("text", x=.5, y=42, label="Adj R2=0.70, p<0.001") + theme(legend.position = "none")
+lm2<-lm (Bee_richness_obs~Florwe.sp.rich.Shannon.s + Treatment, data=env); summary (lm2)
+
+#distance to water
+#all data combined 
+G<-ggplot (env, aes(x=dist.water.m., y=Bee_richness_obs)) + geom_point() + 
+  stat_smooth(method="lm") + theme_bw() +  annotate ("text", x=400, y=35, label="Adj R2=0.28, p=0.02") + xlab("Distance to water (m)") + ylab("Bee Species Richness")
+lm7<-lm (Bee_richness_obs~dist.water.m., data=env); summary (lm7)
+
+#data partitioned by Treatment 
+H<-ggplot (env, aes(x=dist.water.m., y=Bee_richness_obs, color=Treatment)) + geom_point() + 
+  stat_smooth(method="lm") + theme_bw() + xlab("Distance to water (m)") + ylab("Bee Species Richness") + annotate ("text", x=400, y=42, label="Adj R2=0.82, p<0.001") + theme(legend.position = "none")
+
+lm8<-lm (Bee_richness_obs~dist.water.m. + Treatment, data=env); summary (lm8)
+
+#next is Tree Species Diversity 
+#all data combined 
+E<-ggplot (env, aes(x=tree.sp.rich.Shannon.s, y=Bee_richness_obs)) + geom_point() + 
+  stat_smooth(method="lm") + theme_bw() +  annotate ("text", x=1, y=30, label="Adj R2=0.05, p=0.19")
+lm5<-lm (Bee_richness_obs~tree.sp.rich.Shannon.s, data=env); summary (lm5)
+#data partitioned by Treatment 
+F<-ggplot (env, aes(x=tree.sp.rich.Shannon.s, y=Bee_richness_obs, color=Treatment)) + geom_point() + 
+  stat_smooth(method="lm") + theme_bw() +  annotate ("text", x=1, y=40, label="Adj R2=0.71, p<0.01") +    theme(legend.position = "none")
+lm6<-lm (Bee_richness_obs~tree.sp.rich.Shannon.s + Treatment, data=env); summary (lm6)
+
+#next is Tree Species Eveness 
+#all data combined 
+C<-ggplot (env, aes(x=tree.sp.evenness, y=Bee_richness_obs)) + geom_point() + 
+  stat_smooth(method="lm") + theme_bw() +  annotate ("text", x=.5, y=40, label="Adj R2=0.10, p=0.12")
+lm3<-lm (Bee_richness_obs~tree.sp.evenness, data=env); summary (lm3)
+
+#data partitioned by Treatment 
+D<-ggplot (env, aes(x=tree.sp.evenness, y=Bee_richness_obs, color=Treatment)) + geom_point() + 
+  stat_smooth(method="lm") + theme_bw() +  annotate ("text", x=.5, y=40, label="Adj R2=0.70, p=0.0004") + theme (legend.position = "none")
+lm4<-lm (Bee_richness_obs~tree.sp.evenness + Treatment, data=env); summary (lm4)
+
+grid.arrange(A,B,G,H,E,F,C,D, ncol=2)
+
+
+######### bee richness vs. greenspace 
+ggplot (env, aes(x=green.space.m., y=Bee_richness_obs)) + geom_point() + 
+  stat_smooth(method="lm") + theme_bw() + xlab("Green Space area (m^2)") + ylab("Bee Species Richness")
+lm1<-lm (Bee_richness_obs~Florwe.sp.rich.Shannon.s, data=env); summary (lm1)
+b <- ggplot (env, aes(x=green.space.m., y=Bee_abundance)) + geom_point() + 
+  stat_smooth(method="lm") + theme_bw() + xlab("Green Space area (m^2)") + ylab("Bee Abundance")
+lm1<-lm (Bee_richness_obs~Florwe.sp.rich.Shannon.s, data=env); summary (lm1)
+grid.arrange(a, b, ncol = 2)
+```
+
+## The relationships between bee abundance and multiple environmental predictors 
+```{r, glm abundances, fig.height=20, fig.width=8}
+require (MASS)
+global.mod.abund<-  glm (Bee_abundance ~ NDVI + tree.sp.rich.Shannon.s + 
+                    tree.sp.evenness + dist.water.m. + dist.road.m. + 
+                    green.space.m. + NLCD_PCo1 + NLDC_PCo2 + Florwe.sp.rich.Shannon.s + 
+                     Color.Shannon.s , 
+                      family = "poisson", data=env)
+
+summary (global.mod.abund)
+
+stepAIC (global.mod.abund)
+
+best.mod.abund<- glm(formula = Bee_abundance ~ NDVI + Treatment + tree.sp.rich.Shannon.s + 
+    tree.sp.evenness + green.space.m. + NLCD_PCo1 + NLDC_PCo2 + 
+    Florwe.sp.rich.Shannon.s + Color.Shannon.s, family = "poisson", 
+    data = env);summary (best.mod.abund)
+
+#plots and correlation stats
+W<-ggplot (env, aes (x=Florwe.sp.rich.Shannon.s, y=Bee_abundance)) + geom_point() + stat_smooth(method="lm") + annotate ("text", x=1, y=300, label="Adj R2=0.41, p=0.004")
+abund.lm15<- lm(Bee_abundance ~ Florwe.sp.rich.Shannon.s, data=env); summary (abund.lm15)
+
+X<-ggplot (env, aes (x=Florwe.sp.rich.Shannon.s, y=Bee_abundance, color=Treatment)) + geom_point() + stat_smooth(method="lm") + annotate ("text", x=1, y=300, label="Adj R2=0.57, p=0.0004") + theme (legend.position = "none")
+abund.lm16<- lm(Bee_abundance ~ Florwe.sp.rich.Shannon.s + Treatment, data=env); summary (abund.lm16)
+
+Y<-ggplot (env, aes (x=Color.Shannon.s, y=Bee_abundance)) + geom_point() + stat_smooth(method="lm") +
+  annotate ("text", x=1.5, y=200, label="Adj R2=0.07, p=0.17")
+abund.lm17<- lm(Bee_abundance ~ Color.Shannon.s, data=env); summary (abund.lm17)
+
+Z<-ggplot (env, aes (x=Color.Shannon.s, y=Bee_abundance, color=Treatment)) + geom_point() + stat_smooth(method="lm") + annotate ("text", x=1.5, y=350, label="Adj R2=0.56, p=0.005")+ theme (legend.position = "none")
+abund.lm18<- lm(Bee_abundance ~ Color.Shannon.s + Treatment, data=env); summary (abund.lm18)
+
+K<-ggplot (env, aes (x=tree.sp.rich.Shannon.s, y=Bee_abundance)) + geom_point() + stat_smooth(method="lm") + annotate ("text", x=1, y=200, label="Adj R2=0.12, p=0.11")
+abund.lm3<- lm(Bee_abundance ~ tree.sp.rich.Shannon.s, data=env); summary (abund.lm3)
+
+L<-ggplot (env, aes (x=tree.sp.rich.Shannon.s, y=Bee_abundance, color=Treatment)) + geom_point() + stat_smooth(method="lm") + annotate ("text", x=1, y=350, label="Adj R2=0.59, p=0.003") +
+  theme (legend.position = "none")
+abund.lm4<- lm(Bee_abundance ~ tree.sp.rich.Shannon.s + Treatment, data=env); summary (abund.lm4)
+
+M<-ggplot (env, aes (x=tree.sp.evenness, y=Bee_abundance)) + geom_point() + stat_smooth(method="lm")+  annotate ("text", x=.75, y=300, label="Adj R2=0.19, p=0.05") 
+abund.lm5<- lm(Bee_abundance ~ tree.sp.evenness, data=env); summary (abund.lm5)
+
+N<-ggplot (env, aes (x=tree.sp.evenness, y=Bee_abundance, color=Treatment)) + geom_point() + stat_smooth(method="lm") +  annotate ("text", x=.75, y=300, label="Adj R2=0.58, p=0.004") +
+  theme (legend.position = "none")
+abund.lm6<- lm(Bee_abundance ~ tree.sp.evenness + Treatment, data=env); summary (abund.lm6)
+
+I<-ggplot (env, aes (x=NDVI, y=Bee_abundance)) + geom_point() + stat_smooth(method="lm") + 
+    annotate ("text", x=.45, y=250, label="Adj R2=0.00, p=0.49")
+abund.lm1<- lm(Bee_abundance ~ NDVI, data=env); summary (abund.lm1)
+
+J<- ggplot (env, aes (x=NDVI, y=Bee_abundance, color=Treatment)) + geom_point() + stat_smooth(method="lm") + annotate ("text", x=.45, y=250, label="Adj R2=0.62, p=0.002") + 
+  theme (legend.position = "none")
+abund.lm2<- lm(Bee_abundance ~ NDVI + Treatment, data=env); summary (abund.lm2)
+
+Q<-ggplot (env, aes (x=green.space.m., y=Bee_abundance)) + geom_point() + stat_smooth(method="lm")  + annotate ("text", x=3000000, y=250, label="Adj R2=0.60, p=0.97")
+abund.lm9<- lm(Bee_abundance ~ green.space.m., data=env); summary (abund.lm9)
+
+R<-ggplot (env, aes (x=green.space.m., y=Bee_abundance, color=Treatment)) + geom_point() + stat_smooth(method="lm")+ annotate ("text", x=3000000, y=250, label="Adj R2=0.83, p<0.001") + 
+  theme (legend.position = "none")
+abund.lm10<- lm(Bee_abundance ~ green.space.m. + Treatment, data=env); summary (abund.lm10)
+
+S<-ggplot (env, aes (x=NLCD_PCo1, y=Bee_abundance)) + geom_point() + stat_smooth(method="lm") + 
+  annotate ("text", x=.25, y=250, label="Adj R2=0.00, p=0.31")
+abund.lm11<- lm(Bee_abundance ~ NLCD_PCo1, data=env); summary (abund.lm11)
+
+T<-ggplot (env, aes (x=NLCD_PCo1, y=Bee_abundance, color=Treatment)) + geom_point() + stat_smooth(method="lm") + annotate ("text", x=.25, y=250, label="Adj R2=0.65, p=0.001") +   
+  theme (legend.position = "none")
+abund.lm12<- lm(Bee_abundance ~ NLCD_PCo1 + Treatment, data=env); summary (abund.lm12)
+
+U<-ggplot (env, aes (x=NLDC_PCo2, y=Bee_abundance)) + geom_point() + stat_smooth(method="lm") + 
+  annotate ("text", x=.1, y=250, label="Adj R2=0.00, p=0.56")
+abund.lm13<- lm(Bee_abundance ~ NLDC_PCo2, data=env); summary (abund.lm13)
+
+V<-ggplot (env, aes (x=NLDC_PCo2, y=Bee_abundance, color=Treatment)) + geom_point() + stat_smooth(method="lm") + annotate ("text", x=.1, y=350, label="Adj R2=0.56, p=0.005") + 
+    theme (legend.position = "none")
+abund.lm14<- lm(Bee_abundance ~ NLDC_PCo2 + Treatment, data=env); summary (abund.lm14)
+
+grid.arrange(W,X,Y,Z,K,L,M,N,I,J,Q,R,S,T,U,V, ncol=2)
+
+detach("package:MASS", unload=TRUE)
+
+ggplot(env, aes(x=Treatment, y=Bee_abundance)) + geom_boxplot(aes(fill = Treatment), size = 1) + xlab("Treatment")+ ylab("Bee abundance") + theme(text = element_text(size=15), panel.grid.major = element_blank(), panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"),panel.background = element_blank()) + scale_x_discrete(labels = c('Managed Suburban','Managed Urban','Unmanaged Urban')) + xlab("Treatment")  
+
+ggplot(env, aes(x=Treatment, y=Bee_richness_obs)) + geom_boxplot(aes(fill = Treatment), size = 1) + xlab("Treatment")+ ylab("Bee species richness") + theme(text = element_text(size=15), panel.grid.major = element_blank(), panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"),panel.background = element_blank()) + scale_x_discrete(labels = c('Managed Suburban','Managed Urban','Unmanaged Urban')) + xlab("Treatment") 
+```
+
+## A test of spatial autocorrelation between site nearest neighbors and richness and abundance measures 
+```{r, spatial autocorrelation}
+# library(lctools)
+# Coords <- dplyr::select (env, Lat, Lon)
+# 
+# w.adaptive <- w.matrix(Coords,15, WType='Binary', family='adaptive')
+# mI.adaptive <- moransI.w(env$Bee_abundance, w.adaptive)
+# mI.adaptive <- t(as.numeric(as.matrix(mI.adaptive[1:6])))
+# colnames(mI.adaptive) <- col.names
+# mI.adaptive
+
+SAC<-read.csv ("SAC.csv")
+B.4<-ggplot (SAC, aes (x=N, y=I, color=var, shape=sig, linetype=sig)) + geom_point() + geom_line() + theme_bw() + xlab("Number of Nearest Neighbors") + ylab("Moran's I") + 
+  theme(legend.position = "none") + 
+  scale_color_manual(values=c("Black", "Darkgrey")) + 
+  scale_shape_manual(values=c(1, 16)) +
+  scale_linetype_manual(values=c(2,1))
+  plot(B.4)
+```
+
+## The relationship between management and community composition and beta diversity 
+```{r, betapart and NMDS, fig.width=8, fig.height=3, res=400}
+require (ggdendro)
+require (dendextend)
+#create a distance matrix of the observed communities 
+dist.mat<- df %>% filter(Site != "ADAMS") %>%
+  group_by(Site, Treatment) %>%
+  dplyr::select(6:91) %>%   summarize_all (funs(sum)) %>% 
+  column_to_rownames("Site") 
+
+# beta diversity mostly driven by Bray.Bal= value of the balanced variation component of Bray-Curtis multiple-site dissimilarity
+#plot the dissimilarity between sites as a dendrogram 
+dist.calc<- beta.pair.abund(dist.mat[2:85])
+dist.clust<- hclust (dist.calc$beta.bray)
+
+beta.multi.abund(dist.mat[2:85]) 
+
+  # beta diversity mostly driven by Bray.Bal= value of the balanced variation component of Bray-Curtis multiple-site dissimilarity
+#plot the dissimilarity between sites as a dendrogram 
+dend <-dist.clust %>% as.dendrogram %>%
+  set("branches_k_color", k=2) %>% set("branches_lwd", 1.2) %>%
+  set("labels_colors") %>% set("labels_cex", c(1,1.1)) %>% 
+  set("clear_leaves")
+dend
+
+# # plot the dend in usual "base" plotting engine:
+# plot(dend)
+
+# Rectangle dendrogram using ggplot2
+ggd1 <- as.ggdend(dend)
+
+# Change the theme to the default ggplot2 theme
+A.4<-ggplot(ggd1, horiz = TRUE, theme = theme_minimal())
+
+#NMDS  #need function "ggord"
+ord <- metaMDS(dist.mat[, 2:87])
+C.4<-ggord (ord, dist.mat$Treatment, poly = FALSE, obslab = TRUE, 
+       txt = NULL, veclsz = 0) + theme(legend.position = "top") + 
+    annotate("text", x=-1, y=1.05, label="stress=0.22") + ylim (c(-1.5,1.5))
+
+#grid.arrange(A.4, B.4, C.4, ncol=3)
+grid.arrange(A.4, B.4, ncol=3)
+```
+
+## ANOVA & corrgram
+```{r}
+aov <- aov(Bee_abundance ~  Treatment,
+          data = env) #treatment
+# Summary of the analysis
+summary(aov) #gen anova
+TukeyHSD(aov)
+
+aov <- aov(Bee_richness_obs ~  Treatment,
+          data = env) #treatment
+# Summary of the analysis
+summary(aov) #gen anova
+TukeyHSD(aov)
+
+aov <- aov(Bee_richness_obs ~  tree.sp.rich.Shannon.s,
+          data = env) #tree.sp.rich.Shannon.s 
+# Summary of the analysis
+summary(aov) #gen anova
+
+aov <- aov(Bee_abundance ~  dist.water.m.,
+          data = env) #dist.water.m. 
+# Summary of the analysis
+summary(aov) #gen anova
+
+aov <- aov(Bee_richness_obs ~  green.space.m.,
+          data = env) #green.space.m.  
+# Summary of the analysis
+summary(aov) #gen anova
+
+aov <- aov(Bee_richness_obs ~  NLDC_PCo2,
+          data = env) #NLDC_PCo2 
+# Summary of the analysis
+summary(aov) #gen anova
+
+aov <- aov(Bee_richness_obs ~  Florwe.sp.rich.Shannon.s,
+          data = env) #Florwe.sp.rich.Shannon.s 
+# Summary of the analysis
+summary(aov) #gen anova
+
+library(corrgram)
+corrgram(env, order=TRUE, lower.panel=panel.shade,
+  upper.panel=panel.pie, text.panel=panel.txt,
+  main="Bee Data in PC2/PC1 Order")
+
+#prior to GLMS, checked for colinearity, dropped correlates over 70%
+#drop color, dist. road, tree evenness 
+#rerun, change AIC 
+```
